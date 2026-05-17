@@ -4,30 +4,53 @@
 --
 -- A universal exploit-side toolkit for Roblox games protected by client-side
 -- anti-cheats of the "swish-hub/rivals-ac" family, bundled with a complete
--- cosmetic unlocker for Rivals. Designed to be cross-executor (Synapse X,
--- Krnl, Script-Ware, Fluxus, Wave, Electron) by abstracting the host API
--- behind a small shim layer.
+-- cosmetic unlocker for Rivals.
+--
+-- Cross-executor support is provided through an aggressive shim layer that
+-- normalises the host API across:
+--   Synapse X, Synapse V3, Krnl, Script-Ware, Fluxus, Wave, Electron, Sirhurt,
+--   Calamari, JJsploit, Hydrogen, AWP, Codex, Delta, Arceus X, Solara, Xeno,
+--   Velocity, Swift, Trigon, Cryptic, Zorara, Comet, Valyse and any executor
+--   that exposes the standard exploit globals.
 --
 -- Public API (mounted on _G.BCS after load):
 --   BCS.start()                                  -- (auto-runs unless CONFIG.AUTOSTART = false)
---   BCS.stop()                                   -- best-effort teardown of injected hooks
+--   BCS.stop()                                   -- best-effort teardown
+--   BCS.restart()                                -- stop + start
 --   BCS.status()                                 -- prints diagnostics
---   BCS.equip(weapon, cosmeticType, name, opts)  -- equip a cosmetic
---   BCS.unequip(weapon, cosmeticType)            -- clear a cosmetic slot
---   BCS.favorite(weapon, name, value)            -- toggle favourite
---   BCS.equipAll(weapon, table)                  -- bulk-equip multiple slots
---   BCS.randomize(weapon)                        -- random Skin/Wrap/Charm/Finisher
---   BCS.listEquipped()                           -- snapshot of current loadouts
---   BCS.exportConfig()                           -- JSON string of saved state
---   BCS.importConfig(jsonString)                 -- replace state from JSON
---   BCS.config                                   -- live config table (mutate freely)
+--   BCS.dumpHooks()                              -- list every active hook
+--   BCS.diagnose()                               -- run a self-test
+--   BCS.onReady(callback)                        -- run after BCS finishes loading
+--
+-- Unlock helpers:
+--   BCS.equip(weapon, type, name, opts)
+--   BCS.unequip(weapon, type)
+--   BCS.unequipAll(weapon)                       -- clear every slot on a weapon
+--   BCS.clearAll()                               -- clear every loadout
+--   BCS.favorite(weapon, name, value)
+--   BCS.equipAll(weapon, table)
+--   BCS.equipPreset(name)                        -- apply a saved preset
+--   BCS.savePreset(name)                         -- snapshot current loadouts
+--   BCS.deletePreset(name)
+--   BCS.listPresets()
+--   BCS.randomize(weapon)
+--   BCS.randomizeAll()                           -- randomise every weapon known
+--   BCS.listEquipped()
+--   BCS.listCosmetics(type?)                     -- enumerate available cosmetics
+--   BCS.exportConfig()  /  BCS.importConfig(json)
+--   BCS.copyToClipboard(text)
+--
+-- AC helpers:
+--   BCS.addKickPattern(pattern)
+--   BCS.addAcScriptHint(pattern)
+--   BCS.rescanGc()                               -- re-run gc-based AC neuter
 --
 -- Loadstring usage:
 --   loadstring(game:HttpGet("https://raw.githubusercontent.com/Spektronazam/r2scripts/main/BCS.luau"))()
 --
 
 if _G.BCS and _G.BCS._loaded then
-  warn("[BCS] already loaded -- ignoring duplicate execution")
+  warn("[BCS] already loaded -- returning cached instance")
   return _G.BCS
 end
 
@@ -36,21 +59,40 @@ end
 --------------------------------------------------------------------------------
 
 local CONFIG = {
-  AUTOSTART         = true,
-  VERBOSE           = true,
-  PERSIST_PATH      = "BCS/config.json",
-  AC_BYPASS         = true,
-  UNLOCK_ALL        = true,
-  WATCH_NEW_SCRIPTS = true,    -- re-neuter scripts added to ReplicatedFirst at runtime
-  BLOCK_AC_GUI      = true,    -- destroy AC alert GUIs on creation
-  KILL_TELEMETRY    = true,    -- nuke AnalyticsService / LogService listeners
-  KICK_PATTERNS     = {
+  AUTOSTART          = true,
+  VERBOSE            = true,
+  SILENT_ERRORS      = false,        -- if true, errors are swallowed instead of warned
+  PERSIST_PATH       = "BCS/config.json",
+  PRESETS_PATH       = "BCS/presets.json",
+  AC_BYPASS          = true,
+  UNLOCK_ALL         = true,
+  WATCH_NEW_SCRIPTS  = true,         -- re-neuter scripts added to ReplicatedFirst at runtime
+  WATCH_NEW_GUIS     = true,         -- destroy AC alert GUIs on creation
+  KILL_TELEMETRY     = true,         -- nuke AnalyticsService / LogService listeners
+  BLOCK_HTTP_REPORTS = true,         -- swallow HttpService:PostAsync to known AC endpoints
+  PATCH_REQUIRE      = true,         -- intercept require() to neuter newly-required AC modules
+  RETRY_AC_NEUTER    = 3,            -- how many extra rescans to run after first start
+  RETRY_AC_DELAY     = 1.5,          -- seconds between rescans
+  KICK_PATTERNS      = {
     "kick", "ban", "shutdown", "takethel",
-    "anticheat", "detected", "cheating", "exploit", "suspicious",
+    "anticheat", "anti-cheat", "anti_cheat",
+    "detected", "cheating", "exploit", "suspicious",
+    "flagged", "violation", "punish", "report",
   },
-  AC_SCRIPT_HINTS   = {
-    "loadingscreen", "localscript3", "anticheat", "watchdog", "guard",
+  AC_SCRIPT_HINTS    = {
+    "loadingscreen", "localscript3",
+    "anticheat", "anti-cheat", "anti_cheat",
+    "watchdog", "guard", "sentry", "warden",
+    "monitor", "validator", "checker", "detection",
   },
+  AC_HTTP_BLOCKLIST  = {
+    "anticheat", "report", "telemetry", "log/", "logs/", "/log?",
+    "swish-hub", "rivals-ac",
+  },
+}
+
+local PUBLIC_PRESETS = {
+  -- Optional curated presets. Users can add their own at runtime via savePreset.
 }
 
 --------------------------------------------------------------------------------
@@ -62,22 +104,51 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ReplicatedFirst   = game:GetService("ReplicatedFirst")
 local HttpService       = game:GetService("HttpService")
 local CoreGui           = game:GetService("CoreGui")
+local RunService        = game:GetService("RunService")
+local StarterGui        = game:GetService("StarterGui")
+local UserInputService  = game:GetService("UserInputService")
 
-local LocalPlayer = Players.LocalPlayer
+local LocalPlayer = Players.LocalPlayer or Players:GetPropertyChangedSignal("LocalPlayer"):Wait() or Players.LocalPlayer
 
 --------------------------------------------------------------------------------
 -- 2. LOGGER
 --------------------------------------------------------------------------------
 
-local Logger = {}
+local Logger = { history = {}, _max = 200 }
 do
-  local function fmt(level, ...)
-    return string.format("[BCS][%s]", level), ...
+  local function record(level, parts)
+    if #Logger.history >= Logger._max then table.remove(Logger.history, 1) end
+    table.insert(Logger.history, { level = level, time = os.time(), parts = parts })
   end
-  function Logger.info(...)  if CONFIG.VERBOSE then print(fmt("INFO", ...)) end end
-  function Logger.warn(...)  warn(fmt("WARN", ...)) end
-  function Logger.error(...) warn(fmt("ERR ", ...)) end
-  function Logger.debug(...) if CONFIG.VERBOSE then print(fmt("DBG ", ...)) end end
+  local function fmt(level) return string.format("[BCS][%s]", level) end
+  function Logger.info(...)
+    local args = { ... }
+    record("INFO", args)
+    if CONFIG.VERBOSE then print(fmt("INFO"), table.unpack(args)) end
+  end
+  function Logger.warn(...)
+    local args = { ... }
+    record("WARN", args)
+    if not CONFIG.SILENT_ERRORS then warn(fmt("WARN"), table.unpack(args)) end
+  end
+  function Logger.error(...)
+    local args = { ... }
+    record("ERR ", args)
+    if not CONFIG.SILENT_ERRORS then warn(fmt("ERR "), table.unpack(args)) end
+  end
+  function Logger.debug(...)
+    local args = { ... }
+    record("DBG ", args)
+    if CONFIG.VERBOSE then print(fmt("DBG "), table.unpack(args)) end
+  end
+  function Logger.dump(n)
+    n = n or 50
+    local from = math.max(1, #Logger.history - n + 1)
+    for i = from, #Logger.history do
+      local e = Logger.history[i]
+      print(fmt(e.level), table.unpack(e.parts))
+    end
+  end
 end
 
 --------------------------------------------------------------------------------
@@ -99,6 +170,16 @@ do
     return out
   end
 
+  function Util.deepClone(t, seen)
+    if type(t) ~= "table" then return t end
+    seen = seen or {}
+    if seen[t] then return seen[t] end
+    local out = {}
+    seen[t] = out
+    for k, v in pairs(t) do out[Util.deepClone(k, seen)] = Util.deepClone(v, seen) end
+    return out
+  end
+
   function Util.matchesAny(haystack, patterns)
     if type(haystack) ~= "string" then return false end
     local lower = haystack:lower()
@@ -108,7 +189,16 @@ do
     return false
   end
 
-  -- Polls for value, returns it once non-nil or after timeout (defaults: 10s @ 0.1s).
+  function Util.contains(t, value)
+    for _, v in ipairs(t) do if v == value then return true end end
+    return false
+  end
+
+  function Util.appendUnique(t, value)
+    if not Util.contains(t, value) then table.insert(t, value) end
+  end
+
+  -- Polls for value, returns it once non-nil or after timeout (default 10s @ 0.1s).
   function Util.waitFor(fn, timeout, interval)
     timeout  = timeout  or 10
     interval = interval or 0.1
@@ -131,6 +221,12 @@ do
     end
     return mod
   end
+
+  function Util.tableSize(t)
+    local n = 0
+    for _ in pairs(t or {}) do n = n + 1 end
+    return n
+  end
 end
 
 --------------------------------------------------------------------------------
@@ -140,65 +236,111 @@ end
 
 local Exec = {}
 do
-  Exec.name = identifyexecutor and (identifyexecutor()) or
-              (syn and "Synapse X") or
-              (KRNL_LOADED and "Krnl") or
-              (fluxus and "Fluxus") or
-              (getexecutorname and getexecutorname()) or
-              "Unknown"
+  -- ---- Identification ------------------------------------------------------
+  local function detectName()
+    if identifyexecutor then
+      local ok, name = pcall(identifyexecutor)
+      if ok and name and name ~= "" then return name end
+    end
+    if getexecutorname then
+      local ok, name = pcall(getexecutorname)
+      if ok and name and name ~= "" then return name end
+    end
+    if syn       then return "Synapse X"  end
+    if KRNL_LOADED then return "Krnl"     end
+    if fluxus    then return "Fluxus"     end
+    if Krampus   then return "Krampus"    end
+    if WrdEnv    then return "WeAreDevs"  end
+    if pebc_execute then return "ProtoSmasher" end
+    if is_sirhurt_closure then return "SirHurt" end
+    return "Unknown"
+  end
+  Exec.name = detectName()
 
-  -- HTTP
+  -- ---- HTTP ----------------------------------------------------------------
   Exec.httpRequest = (syn and syn.request) or
                      (http and http.request) or
                      (fluxus and fluxus.request) or
                      http_request or
                      request
 
-  -- Filesystem
+  -- ---- Filesystem ----------------------------------------------------------
   Exec.writeFile  = writefile
   Exec.readFile   = readfile
+  Exec.appendFile = appendfile
   Exec.isFile     = isfile
   Exec.isFolder   = isfolder
   Exec.makeFolder = makefolder
   Exec.delFile    = delfile
+  Exec.delFolder  = delfolder
+  Exec.listFiles  = listfiles
+  Exec.loadFile   = loadfile
 
-  -- Hooking primitives
-  Exec.hookFunction     = hookfunction or replaceclosure or detour
-  Exec.hookMetamethod   = hookmetamethod
-  Exec.getRawMetatable  = getrawmetatable or debug.getmetatable
-  Exec.setReadOnly      = setreadonly or make_writeable or function() end
-  Exec.newCClosure      = newcclosure or function(f) return f end
+  -- ---- Hooking primitives --------------------------------------------------
+  Exec.hookFunction      = hookfunction or replaceclosure or detour_function or detour
+  Exec.hookMetamethod    = hookmetamethod
+  Exec.getRawMetatable   = getrawmetatable or debug.getmetatable
+  Exec.setReadOnly       = setreadonly or make_writeable or function() end
+  Exec.makeWritable      = make_writeable or setreadonly
+  Exec.newCClosure       = newcclosure or function(f) return f end
+  Exec.checkCaller       = checkcaller or function() return false end
   Exec.getNamecallMethod = getnamecallmethod or function() return "" end
-  Exec.getGc            = getgc or get_gc_objects
-  Exec.getConstants     = debug.getconstants or getconstants
-  Exec.getInfo          = debug.getinfo or getinfo
+  Exec.setNamecallMethod = setnamecallmethod
+  Exec.getCallingScript  = getcallingscript or function() return nil end
 
-  -- Drawing / GUI helpers (not used directly, but exposed for downstream scripts)
-  Exec.gethui = gethui or function() return CoreGui end
+  -- ---- Reflection ----------------------------------------------------------
+  Exec.getGc            = getgc or get_gc_objects
+  Exec.getInfo          = debug.getinfo or getinfo
+  Exec.getConstants     = debug.getconstants or getconstants
+  Exec.getUpvalues      = debug.getupvalues or getupvalues
+  Exec.getProtos        = debug.getprotos or getprotos
+  Exec.getRegistry      = getreg or debug.getregistry
+
+  -- ---- Misc ---------------------------------------------------------------
+  Exec.getHui      = gethui or function() return CoreGui end
+  Exec.protectGui  = protectgui or syn and syn.protect_gui or function() end
+  Exec.queueOnTeleport = queue_on_teleport or syn and syn.queue_on_teleport or function() end
+  Exec.setClipboard = setclipboard or set_clipboard or toclipboard or
+                       (Clipboard and Clipboard.set) or
+                       function() end
+  Exec.getClipboard = getclipboard or get_clipboard or
+                       (Clipboard and Clipboard.get) or
+                       function() return "" end
+  Exec.messageBox   = messagebox or function() end
 
   function Exec.has(name)
     return type(Exec[name]) == "function"
   end
 
+  function Exec.featureMap()
+    local feats = {
+      "hookFunction", "hookMetamethod", "getRawMetatable", "getGc",
+      "writeFile", "readFile", "isFile", "makeFolder",
+      "httpRequest", "newCClosure", "getNamecallMethod",
+      "setClipboard", "queueOnTeleport", "protectGui",
+      "getInfo", "getConstants", "getUpvalues",
+    }
+    local out = {}
+    for _, f in ipairs(feats) do out[f] = Exec.has(f) end
+    return out
+  end
+
   function Exec.report()
     Logger.info("executor =", Exec.name)
-    local feats = { "hookFunction", "hookMetamethod", "getRawMetatable", "getGc",
-                    "writeFile", "readFile", "httpRequest" }
-    for _, f in ipairs(feats) do
-      Logger.info(string.format("  %-16s = %s", f, Exec.has(f) and "yes" or "MISSING"))
+    for k, v in pairs(Exec.featureMap()) do
+      Logger.info(string.format("  %-20s = %s", k, v and "yes" or "MISSING"))
     end
   end
 end
 
 --------------------------------------------------------------------------------
 -- 5. HOOK REGISTRY
---   Tracks every hook we install so BCS.stop() can roll most of them back.
 --------------------------------------------------------------------------------
 
 local Hooks = { entries = {} }
 do
   function Hooks.track(label, restoreFn)
-    table.insert(Hooks.entries, { label = label, restore = restoreFn })
+    table.insert(Hooks.entries, { label = label, restore = restoreFn, time = os.time() })
   end
 
   function Hooks.restoreAll()
@@ -206,6 +348,13 @@ do
       local entry = Hooks.entries[i]
       Util.safeCall(entry.restore)
       Hooks.entries[i] = nil
+    end
+  end
+
+  function Hooks.dump()
+    Logger.info(string.format("active hooks: %d", #Hooks.entries))
+    for i, e in ipairs(Hooks.entries) do
+      Logger.info(string.format("  %02d. %s", i, e.label))
     end
   end
 
@@ -220,8 +369,6 @@ do
       return handler(original, self, ...)
     end)
     Hooks.track(label, function()
-      -- Best-effort: re-hook to call the captured original. There is no clean
-      -- "unhook" primitive on most executors; this is the standard idiom.
       Exec.hookMetamethod(target, "__namecall", original)
     end)
     return original
@@ -245,11 +392,10 @@ end
 
 local AntiCheat = {}
 do
-  local fakeAlert -- spoofed RemoteEvent, kept alive for the session
+  local fakeAlert      -- spoofed RemoteEvent, kept alive for the session
+  local rescanCounter = 0
 
   function AntiCheat.spoofClientAlert()
-    -- The Rivals AC client expects LocalPlayer:WaitForChild("ClientAlert"); we
-    -- give it a do-nothing RemoteEvent so it never times out and never fires.
     fakeAlert = Instance.new("RemoteEvent")
     fakeAlert.Name = "ClientAlert"
     fakeAlert.Parent = LocalPlayer
@@ -279,7 +425,6 @@ do
   end
 
   function AntiCheat.blockKickAndShutdown()
-    -- Catches both the obvious :Kick path and the AC's preferred ClientAlert:FireServer.
     Hooks.hookNamecall(game, "kickBlocker", function(original, self, ...)
       local m = Exec.getNamecallMethod()
       if not m or m == "" then return original(self, ...) end
@@ -292,20 +437,32 @@ do
 
       -- Anything that smells like a kick/ban/shutdown call.
       if Util.matchesAny(m, CONFIG.KICK_PATTERNS) then
-        Logger.info("blocked namecall:", m)
+        Logger.debug("blocked namecall:", m)
         return
       end
 
       -- AC pinging itself through the spoofed remote.
       if m == "FireServer" and self == fakeAlert then return end
 
+      -- HTTP report blocking.
+      if CONFIG.BLOCK_HTTP_REPORTS and (m == "PostAsync" or m == "RequestAsync" or m == "GetAsync") then
+        local args = { ... }
+        local url = type(args[1]) == "string" and args[1] or
+                    (type(args[1]) == "table" and args[1].Url) or ""
+        if Util.matchesAny(url, CONFIG.AC_HTTP_BLOCKLIST) then
+          Logger.info("blocked AC http:", url)
+          if m == "PostAsync" then return end
+          return ""
+        end
+      end
+
       return original(self, ...)
     end)
   end
 
   -- Generic constant-scanner: nukes any GC function whose script context matches
-  -- AC_SCRIPT_HINTS *or* whose constants match KICK_PATTERNS. This is the same
-  -- trick the original used for LocalScript3, generalised.
+  -- AC_SCRIPT_HINTS *or* whose constants match KICK_PATTERNS. This generalises
+  -- the original LocalScript3 trick.
   function AntiCheat.neuterGcFunctions()
     if not Exec.getGc then
       Logger.warn("getgc unavailable, skipping gc neuter")
@@ -338,13 +495,15 @@ do
         end
       end
     end
-    Logger.info("neutered", count, "AC-suspect closures")
+    rescanCounter = rescanCounter + 1
+    Logger.info(string.format("gc rescan #%d -- neutered %d closures", rescanCounter, count))
     return count
   end
 
   -- Block in-game GUI alerts that the AC pops up *before* it fires :Kick.
   function AntiCheat.blockAlertGui()
-    if not CONFIG.BLOCK_AC_GUI then return end
+    if not CONFIG.WATCH_NEW_GUIS then return end
+
     local function inspect(gui)
       if not gui:IsA("ScreenGui") then return end
       local n = gui.Name:lower()
@@ -353,9 +512,18 @@ do
         pcall(function() gui:Destroy() end)
       end
     end
-    local conn = CoreGui.ChildAdded:Connect(inspect)
-    Hooks.track("alertGuiWatcher", function() conn:Disconnect() end)
+
+    local conn1 = CoreGui.ChildAdded:Connect(inspect)
+    local pgui  = LocalPlayer:FindFirstChildOfClass("PlayerGui")
+    local conn2 = pgui and pgui.ChildAdded:Connect(inspect)
+
+    Hooks.track("alertGuiWatcher", function()
+      conn1:Disconnect()
+      if conn2 then conn2:Disconnect() end
+    end)
+
     for _, c in ipairs(CoreGui:GetChildren()) do inspect(c) end
+    if pgui then for _, c in ipairs(pgui:GetChildren()) do inspect(c) end end
   end
 
   -- Re-run gc neuter when scripts arrive late (some ACs delay-load on join).
@@ -363,7 +531,7 @@ do
     if not CONFIG.WATCH_NEW_SCRIPTS then return end
     local conn = ReplicatedFirst.ChildAdded:Connect(function(child)
       if child:IsA("LocalScript") or child:IsA("ModuleScript") then
-        task.wait(0.5)  -- let the script load its closures into gc
+        task.wait(0.5)
         AntiCheat.neuterGcFunctions()
       end
     end)
@@ -374,15 +542,47 @@ do
   function AntiCheat.killTelemetry()
     if not CONFIG.KILL_TELEMETRY then return end
     Util.safeCall(function()
-      local Analytics = game:GetService("AnalyticsService")
-      if Analytics and Exec.hookMetamethod then
-        Hooks.hookNamecall(Analytics, "analyticsKill", function(original, self, ...)
-          local m = Exec.getNamecallMethod()
-          if m and m:find("Fire") then return end
-          return original(self, ...)
-        end)
+      local svcs = { "AnalyticsService", "MarketplaceService", "LogService" }
+      for _, svc in ipairs(svcs) do
+        local ok, instance = pcall(game.GetService, game, svc)
+        if ok and instance and Exec.hookMetamethod then
+          Hooks.hookNamecall(instance, "telemetry_" .. svc, function(original, self, ...)
+            local m = Exec.getNamecallMethod()
+            if m and (m:find("Fire") or m:find("Track") or m:find("Send") or m:find("Report")) then
+              return
+            end
+            return original(self, ...)
+          end)
+        end
       end
     end)
+  end
+
+  -- Patch require() so future AC modules get neutralised on load.
+  function AntiCheat.patchRequire()
+    if not CONFIG.PATCH_REQUIRE then return end
+    if not Exec.hookFunction then return end
+
+    local origRequire = require
+    local hooked
+    hooked = function(arg)
+      local result = origRequire(arg)
+      Util.safeCall(function()
+        local name = (typeof(arg) == "Instance") and arg:GetFullName() or tostring(arg)
+        if Util.matchesAny(name, CONFIG.AC_SCRIPT_HINTS) then
+          Logger.info("require intercepted AC module:", name)
+          if type(result) == "table" then
+            for k, v in pairs(result) do
+              if type(v) == "function" and Util.matchesAny(k, CONFIG.KICK_PATTERNS) then
+                result[k] = function() end
+              end
+            end
+          end
+        end
+      end)
+      return result
+    end
+    Hooks.hookFn("requirePatch", origRequire, hooked)
   end
 
   function AntiCheat.start()
@@ -391,6 +591,7 @@ do
     AntiCheat.blockKickAndShutdown()
     AntiCheat.blockAlertGui()
     AntiCheat.killTelemetry()
+    AntiCheat.patchRequire()
 
     -- Wait briefly for LocalScript3 (or whatever the AC is named today) to land.
     local ls3 = ReplicatedFirst:FindFirstChild("LocalScript3") or
@@ -399,12 +600,25 @@ do
 
     AntiCheat.neuterGcFunctions()
     AntiCheat.watchReplicatedFirst()
+
+    -- Multiple delayed rescans to catch ACs that load after our entry point.
+    task.spawn(function()
+      for i = 1, CONFIG.RETRY_AC_NEUTER do
+        task.wait(CONFIG.RETRY_AC_DELAY)
+        AntiCheat.neuterGcFunctions()
+      end
+    end)
+
     Logger.info("AC bypass active")
+  end
+
+  function AntiCheat.rescan()
+    AntiCheat.neuterGcFunctions()
   end
 end
 
 --------------------------------------------------------------------------------
--- 7. UNLOCK-ALL  (Rivals-specific; degrades gracefully if modules not present)
+-- 7. UNLOCK-ALL  (Rivals-specific; degrades gracefully if modules missing)
 --------------------------------------------------------------------------------
 
 local Unlock = {}
@@ -412,6 +626,7 @@ do
   local state = {
     equipped         = {},
     favorites        = {},
+    presets          = Util.deepClone(PUBLIC_PRESETS),
     constructingWpn  = nil,
     viewingProfile   = nil,
     lastUsedWeapon   = nil,
@@ -419,7 +634,6 @@ do
   }
   Unlock.state = state
 
-  -- Module handles, populated lazily.
   local Modules = {
     EnumLibrary       = nil,
     CosmeticLibrary   = nil,
@@ -511,30 +725,35 @@ do
   -- Persistence
   ----------------------------------------------------------------------------
 
-  local function ensureFolder()
+  local function ensureFolder(path)
     if not Exec.makeFolder then return end
-    local folder = CONFIG.PERSIST_PATH:match("^(.+)/") or "BCS"
+    local folder = path:match("^(.+)/") or "BCS"
     pcall(Exec.makeFolder, folder)
+  end
+
+  local function snapshotEquipped()
+    local out = {}
+    for weapon, cosmetics in pairs(state.equipped) do
+      out[weapon] = {}
+      for cosmeticType, cosmetic in pairs(cosmetics) do
+        if cosmetic and cosmetic.Name then
+          out[weapon][cosmeticType] = {
+            name     = cosmetic.Name,
+            seed     = cosmetic.Seed,
+            inverted = cosmetic.Inverted,
+          }
+        end
+      end
+    end
+    return out
   end
 
   function Unlock.saveConfig()
     if not Exec.writeFile then return end
     Util.safeCall(function()
-      local snapshot = { equipped = {}, favorites = state.favorites }
-      for weapon, cosmetics in pairs(state.equipped) do
-        snapshot.equipped[weapon] = {}
-        for cosmeticType, cosmetic in pairs(cosmetics) do
-          if cosmetic and cosmetic.Name then
-            snapshot.equipped[weapon][cosmeticType] = {
-              name     = cosmetic.Name,
-              seed     = cosmetic.Seed,
-              inverted = cosmetic.Inverted,
-            }
-          end
-        end
-      end
-      ensureFolder()
-      Exec.writeFile(CONFIG.PERSIST_PATH, HttpService:JSONEncode(snapshot))
+      local payload = { equipped = snapshotEquipped(), favorites = state.favorites }
+      ensureFolder(CONFIG.PERSIST_PATH)
+      Exec.writeFile(CONFIG.PERSIST_PATH, HttpService:JSONEncode(payload))
     end)
   end
 
@@ -558,8 +777,27 @@ do
     end)
   end
 
+  function Unlock.savePresets()
+    if not Exec.writeFile then return end
+    Util.safeCall(function()
+      ensureFolder(CONFIG.PRESETS_PATH)
+      Exec.writeFile(CONFIG.PRESETS_PATH, HttpService:JSONEncode(state.presets))
+    end)
+  end
+
+  function Unlock.loadPresets()
+    if not (Exec.readFile and Exec.isFile and Exec.isFile(CONFIG.PRESETS_PATH)) then return end
+    Util.safeCall(function()
+      state.presets = HttpService:JSONDecode(Exec.readFile(CONFIG.PRESETS_PATH))
+    end)
+  end
+
   function Unlock.exportConfig()
-    return HttpService:JSONEncode({ equipped = state.equipped, favorites = state.favorites })
+    return HttpService:JSONEncode({
+      equipped  = snapshotEquipped(),
+      favorites = state.favorites,
+      presets   = state.presets,
+    })
   end
 
   function Unlock.importConfig(json)
@@ -575,7 +813,9 @@ do
         end
       end
     end
+    if data.presets then state.presets = data.presets end
     Unlock.saveConfig()
+    Unlock.savePresets()
     return true
   end
 
@@ -602,6 +842,20 @@ do
     return Unlock.equip(weapon, cosmeticType, nil)
   end
 
+  function Unlock.unequipAll(weapon)
+    state.equipped[weapon] = nil
+    Util.safeCall(function() Modules.DataController.CurrentData:Replicate("WeaponInventory") end)
+    Unlock.saveConfig()
+    return true
+  end
+
+  function Unlock.clearAll()
+    state.equipped = {}
+    Util.safeCall(function() Modules.DataController.CurrentData:Replicate("WeaponInventory") end)
+    Unlock.saveConfig()
+    return true
+  end
+
   function Unlock.favorite(weapon, name, value)
     state.favorites[weapon] = state.favorites[weapon] or {}
     state.favorites[weapon][name] = value or nil
@@ -621,20 +875,81 @@ do
     return true
   end
 
-  function Unlock.randomize(weapon)
+  function Unlock.savePreset(name)
+    if not name or name == "" then return false, "name required" end
+    state.presets[name] = snapshotEquipped()
+    Unlock.savePresets()
+    return true
+  end
+
+  function Unlock.equipPreset(name)
+    local preset = state.presets[name]
+    if not preset then return false, "preset not found" end
+    state.equipped = {}
+    for weapon, cosmetics in pairs(preset) do
+      state.equipped[weapon] = {}
+      for cosmeticType, info in pairs(cosmetics) do
+        local cloned = cloneCosmetic(info.name, cosmeticType, { inverted = info.inverted })
+        if cloned then
+          cloned.Seed = info.seed
+          state.equipped[weapon][cosmeticType] = cloned
+        end
+      end
+    end
+    Util.safeCall(function() Modules.DataController.CurrentData:Replicate("WeaponInventory") end)
+    Unlock.saveConfig()
+    return true
+  end
+
+  function Unlock.deletePreset(name)
+    state.presets[name] = nil
+    Unlock.savePresets()
+    return true
+  end
+
+  function Unlock.listPresets()
+    local out = {}
+    for k in pairs(state.presets) do table.insert(out, k) end
+    table.sort(out)
+    return out
+  end
+
+  local function bucketCosmetics()
     local lib = Modules.CosmeticLibrary
-    if not (lib and lib.Cosmetics) then return false end
-    local buckets = { Skin = {}, Wrap = {}, Charm = {}, Finisher = {} }
+    if not (lib and lib.Cosmetics) then return {} end
+    local buckets = {}
     for name, data in pairs(lib.Cosmetics) do
-      if data and data.Type and buckets[data.Type] then
+      if data and data.Type then
+        buckets[data.Type] = buckets[data.Type] or {}
         table.insert(buckets[data.Type], name)
       end
     end
+    return buckets
+  end
+
+  function Unlock.randomize(weapon)
+    local buckets = bucketCosmetics()
+    if not next(buckets) then return false end
     for cosmeticType, names in pairs(buckets) do
-      if #names > 0 then
+      if Util.contains({ "Skin", "Wrap", "Charm", "Finisher" }, cosmeticType) and #names > 0 then
         Unlock.equip(weapon, cosmeticType, names[math.random(1, #names)])
       end
     end
+    return true
+  end
+
+  function Unlock.randomizeAll()
+    local buckets = bucketCosmetics()
+    if not next(buckets) then return false end
+    -- Approximate weapon list from the equipped table + ItemLibrary if available.
+    local weapons = {}
+    for w in pairs(state.equipped) do table.insert(weapons, w) end
+    if Modules.ItemLibrary and Modules.ItemLibrary.Items then
+      for w in pairs(Modules.ItemLibrary.Items) do
+        Util.appendUnique(weapons, w)
+      end
+    end
+    for _, w in ipairs(weapons) do Unlock.randomize(w) end
     return true
   end
 
@@ -644,6 +959,19 @@ do
       out[weapon] = {}
       for cosmeticType, c in pairs(cosmetics) do out[weapon][cosmeticType] = c.Name end
     end
+    return out
+  end
+
+  function Unlock.listCosmetics(filterType)
+    local lib = Modules.CosmeticLibrary
+    if not (lib and lib.Cosmetics) then return {} end
+    local out = {}
+    for name, data in pairs(lib.Cosmetics) do
+      if not filterType or (data and data.Type == filterType) then
+        table.insert(out, name)
+      end
+    end
+    table.sort(out)
     return out
   end
 
@@ -922,6 +1250,7 @@ do
     patchItemLibrary()
     patchViewProfile()
     patchFinishers()
+    Unlock.loadPresets()
     Unlock.loadConfig()
     Logger.info("unlock-all active")
   end
@@ -931,15 +1260,18 @@ end
 -- 8. PUBLIC API + LIFECYCLE
 --------------------------------------------------------------------------------
 
+local readyCallbacks = {}
+
 local BCS = {
   _loaded   = false,
-  _version  = "1.0.0",
+  _version  = "1.1.0",
   config    = CONFIG,
   log       = Logger,
   exec      = Exec,
   hooks     = Hooks,
   antiCheat = AntiCheat,
   unlock    = Unlock,
+  util      = Util,
 }
 
 function BCS.start()
@@ -950,6 +1282,8 @@ function BCS.start()
   if CONFIG.UNLOCK_ALL then Util.safeCall(Unlock.start) end
   BCS._loaded = true
   Logger.info("BCS ready")
+  for _, cb in ipairs(readyCallbacks) do Util.safeCall(cb, BCS) end
+  table.clear(readyCallbacks)
   return BCS
 end
 
@@ -959,6 +1293,34 @@ function BCS.stop()
   BCS._loaded = false
 end
 
+function BCS.restart()
+  BCS.stop()
+  task.wait(0.1)
+  BCS.start()
+end
+
+function BCS.onReady(callback)
+  if type(callback) ~= "function" then return end
+  if BCS._loaded then callback(BCS) else table.insert(readyCallbacks, callback) end
+end
+
+function BCS.dumpHooks() Hooks.dump() end
+
+function BCS.diagnose()
+  Logger.info("=== BCS diagnose ===")
+  Logger.info("version           ", BCS._version)
+  Logger.info("executor          ", Exec.name)
+  Logger.info("hookmetamethod    ", tostring(Exec.has("hookMetamethod")))
+  Logger.info("hookfunction      ", tostring(Exec.has("hookFunction")))
+  Logger.info("getrawmetatable   ", tostring(Exec.has("getRawMetatable")))
+  Logger.info("getgc             ", tostring(Exec.has("getGc")))
+  Logger.info("filesystem        ", tostring(Exec.has("writeFile") and Exec.has("readFile")))
+  Logger.info("clientalert spoof ", tostring(LocalPlayer:FindFirstChild("ClientAlert") ~= nil))
+  Logger.info("hooks installed   ", #Hooks.entries)
+  Logger.info("loadouts saved    ", Util.tableSize(Unlock.state.equipped))
+  Logger.info("presets saved     ", Util.tableSize(Unlock.state.presets))
+end
+
 function BCS.status()
   Logger.info("=== BCS status ===")
   Logger.info("version           ", BCS._version)
@@ -966,21 +1328,46 @@ function BCS.status()
   Logger.info("ac bypass enabled ", tostring(CONFIG.AC_BYPASS))
   Logger.info("unlock enabled    ", tostring(CONFIG.UNLOCK_ALL))
   Logger.info("hooks installed   ", #Hooks.entries)
-  local equippedSnap = Unlock.listEquipped()
-  local count = 0
-  for _ in pairs(equippedSnap) do count = count + 1 end
-  Logger.info("loadouts saved    ", count)
+  Logger.info("loadouts saved    ", Util.tableSize(Unlock.state.equipped))
+end
+
+function BCS.copyToClipboard(text)
+  if type(text) ~= "string" then text = tostring(text) end
+  pcall(Exec.setClipboard, text)
+  return true
+end
+
+function BCS.addKickPattern(pattern)
+  if type(pattern) ~= "string" then return end
+  Util.appendUnique(CONFIG.KICK_PATTERNS, pattern:lower())
+end
+
+function BCS.addAcScriptHint(pattern)
+  if type(pattern) ~= "string" then return end
+  Util.appendUnique(CONFIG.AC_SCRIPT_HINTS, pattern:lower())
+end
+
+function BCS.rescanGc()
+  return AntiCheat.rescan()
 end
 
 -- Pass-through helpers so callers don't need to drill into BCS.unlock.
-BCS.equip         = function(...) return Unlock.equip(...) end
-BCS.unequip       = function(...) return Unlock.unequip(...) end
-BCS.favorite      = function(...) return Unlock.favorite(...) end
-BCS.equipAll      = function(...) return Unlock.equipAll(...) end
-BCS.randomize     = function(...) return Unlock.randomize(...) end
-BCS.listEquipped  = function() return Unlock.listEquipped() end
-BCS.exportConfig  = function() return Unlock.exportConfig() end
-BCS.importConfig  = function(json) return Unlock.importConfig(json) end
+BCS.equip          = function(...) return Unlock.equip(...) end
+BCS.unequip        = function(...) return Unlock.unequip(...) end
+BCS.unequipAll     = function(...) return Unlock.unequipAll(...) end
+BCS.clearAll       = function() return Unlock.clearAll() end
+BCS.favorite       = function(...) return Unlock.favorite(...) end
+BCS.equipAll       = function(...) return Unlock.equipAll(...) end
+BCS.equipPreset    = function(...) return Unlock.equipPreset(...) end
+BCS.savePreset     = function(...) return Unlock.savePreset(...) end
+BCS.deletePreset   = function(...) return Unlock.deletePreset(...) end
+BCS.listPresets    = function() return Unlock.listPresets() end
+BCS.randomize      = function(...) return Unlock.randomize(...) end
+BCS.randomizeAll   = function() return Unlock.randomizeAll() end
+BCS.listEquipped   = function() return Unlock.listEquipped() end
+BCS.listCosmetics  = function(...) return Unlock.listCosmetics(...) end
+BCS.exportConfig   = function() return Unlock.exportConfig() end
+BCS.importConfig   = function(json) return Unlock.importConfig(json) end
 
 _G.BCS = BCS
 

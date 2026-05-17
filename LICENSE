@@ -1,21 +1,213 @@
-MIT License
+================================================================================
+                    r2scripts EXPLOIT SCRIPT LICENSE (rESL)
+                                 Version 1.0
+================================================================================
 
-Copyright (c) 2026 spekT
+Copyright (c) 2026 spekT ("the Author"). All rights reserved except where
+expressly granted below.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+This License governs your use of the LuaU source code, modules, snippets,
+configuration files, and any associated documentation contained in the
+r2scripts repository (collectively, "the Scripts"). The Scripts are intended
+to be executed inside third-party Roblox script executors (for example, but
+not limited to: Synapse X, Krnl, Script-Ware, Electron, Fluxus, Wave, and
+similar environments). By downloading, copying, executing, modifying,
+distributing, or otherwise using the Scripts in any way, you ("the User")
+agree to every term and condition set forth in this License. If you do not
+agree, you must immediately delete every copy of the Scripts in your
+possession.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+--------------------------------------------------------------------------------
+0. NO AFFILIATION
+--------------------------------------------------------------------------------
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+The Scripts are an unofficial, independent work. The Author is in no way
+affiliated with, endorsed by, sponsored by, partnered with, or otherwise
+connected to Roblox Corporation or to any executor vendor mentioned above.
+"Roblox" and any executor product names are trademarks of their respective
+owners and are referenced for identification purposes only.
+
+--------------------------------------------------------------------------------
+1. GRANT OF LICENSE
+--------------------------------------------------------------------------------
+
+Subject to full and ongoing compliance with every section of this License,
+the Author grants the User a worldwide, royalty-free, non-exclusive,
+revocable, non-transferable, non-sublicensable license to:
+
+  (a) download and locally store copies of the Scripts;
+  (b) execute the Scripts inside a Roblox script executor for personal,
+      non-commercial use;
+  (c) study, modify, and create derivative works of the Scripts for the
+      User's own personal, non-commercial use;
+  (d) redistribute unmodified or modified copies of the Scripts publicly,
+      ONLY when every condition listed in Section 3 is satisfied.
+
+This grant is automatically and immediately terminated upon any breach of
+this License (see Section 7).
+
+--------------------------------------------------------------------------------
+2. RESTRICTIONS
+--------------------------------------------------------------------------------
+
+The User shall NOT, under any circumstances:
+
+  (a) sell, rent, lease, license for fee, monetize behind a paywall, place
+      behind a "key system" that earns the User revenue (including but not
+      limited to linkvertise, lootlabs, work.ink, sub2unlock, mboost,
+      adfly, or any equivalent), or otherwise commercially exploit the
+      Scripts or any derivative work, in whole or in part, without the
+      Author's prior written and signed permission;
+
+  (b) re-upload the Scripts to any script hub, marketplace, "cheat" forum,
+      or aggregator site (including but not limited to v3rmillion, wearedevs,
+      rscripts.net, scriptblox, or scriptpastebin) while passing the work
+      off as the User's own creation;
+
+  (c) remove, obscure, alter, minify-strip, or rename the copyright notice,
+      this License text, or any author/credit comment present in the Scripts;
+
+  (d) use the Scripts (or any portion thereof) inside any product, service,
+      executor, malware, RAT, stealer, miner, botnet, phishing kit, or any
+      tool whose primary purpose is to harm, defraud, or steal from another
+      person;
+
+  (e) use the Scripts to attack, deny service to, exfiltrate data from, or
+      otherwise compromise systems, accounts, or property that the User does
+      not personally own or have explicit written authorization to test;
+
+  (f) misrepresent the origin of the Scripts, falsely claim authorship,
+      claim endorsement by the Author, or use the Author's username, handle,
+      or likeness to promote unrelated products without permission.
+
+--------------------------------------------------------------------------------
+3. REDISTRIBUTION CONDITIONS
+--------------------------------------------------------------------------------
+
+If the User redistributes the Scripts (modified or not), every copy MUST:
+
+  (a) include this License file verbatim and unmodified;
+  (b) preserve the copyright header at the top of every Lua/LuaU source
+      file in the form:
+          -- r2scripts -- (c) 2026 spekT -- licensed under rESL v1.0
+  (c) clearly state, in any README, post, or distribution page, that the
+      work is "based on r2scripts by spekT" with a link back to the
+      original repository;
+  (d) for modified versions, prominently mark the changes (for example, a
+      "CHANGES" section in the README, or a comment block at the top of any
+      modified file describing what was altered and by whom);
+  (e) be redistributed under THIS License, unchanged. Re-licensing under
+      MIT, GPL, Apache, "public domain", "skidded", "leaked", "free for
+      all", or any other terms is expressly forbidden.
+
+--------------------------------------------------------------------------------
+4. EXECUTOR / ROBLOX TERMS OF SERVICE
+--------------------------------------------------------------------------------
+
+The User acknowledges and accepts that:
+
+  (a) Use of any Roblox script executor likely violates the Roblox Terms of
+      Use and may result in account moderation, including warning, kick,
+      temporary suspension, or permanent ban of the User's Roblox account
+      and any device fingerprint associated with it;
+  (b) The Author has no control over, and bears no responsibility for, any
+      detection, ban, hardware ban, or other action taken by Roblox
+      Corporation, executor vendors, game developers, or any third party
+      against the User;
+  (c) Use of the Scripts may damage, brick, soft-lock, or otherwise affect
+      the operation of the User's Roblox client, executor, save data, or
+      operating system;
+  (d) The User is solely responsible for ensuring that their use of the
+      Scripts is lawful in the User's jurisdiction.
+
+The User assumes all such risk. The Author shall not be made responsible
+for the User's choice to run the Scripts.
+
+--------------------------------------------------------------------------------
+5. NO WARRANTY
+--------------------------------------------------------------------------------
+
+THE SCRIPTS ARE PROVIDED "AS IS" AND "AS AVAILABLE", WITH ALL FAULTS AND
+WITHOUT WARRANTY OF ANY KIND, EXPRESS, IMPLIED, STATUTORY, OR OTHERWISE.
+THE AUTHOR EXPRESSLY DISCLAIMS ALL WARRANTIES INCLUDING, BUT NOT LIMITED
+TO, WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE,
+TITLE, NON-INFRINGEMENT, ACCURACY, RELIABILITY, AVAILABILITY, FREEDOM FROM
+DETECTION, FREEDOM FROM BANS, FREEDOM FROM MALWARE, AND ANY WARRANTY
+ARISING FROM COURSE OF DEALING OR USAGE OF TRADE.
+
+THE AUTHOR DOES NOT WARRANT THAT THE SCRIPTS WILL FUNCTION ON ANY
+PARTICULAR EXECUTOR, ROBLOX VERSION, GAME, OPERATING SYSTEM, OR HARDWARE
+CONFIGURATION, NOR THAT THEY WILL BE FREE OF BUGS, ERRORS, CRASHES, OR
+INTERRUPTIONS.
+
+--------------------------------------------------------------------------------
+6. LIMITATION OF LIABILITY
+--------------------------------------------------------------------------------
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, IN NO EVENT SHALL THE
+AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+CONSEQUENTIAL, EXEMPLARY, OR PUNITIVE DAMAGES, INCLUDING BUT NOT LIMITED
+TO LOST PROFITS, LOST ROBUX, LOST IN-GAME ITEMS, LOST ACCOUNTS, LOST DATA,
+HARDWARE BANS, IP BANS, REPUTATIONAL DAMAGE, OR ANY OTHER LOSS, WHETHER
+IN CONTRACT, TORT (INCLUDING NEGLIGENCE), STRICT LIABILITY, OR OTHERWISE,
+ARISING OUT OF OR IN CONNECTION WITH THE USE, INABILITY TO USE,
+DETECTION, OR DISTRIBUTION OF THE SCRIPTS, EVEN IF THE AUTHOR HAS BEEN
+ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.
+
+THE TOTAL CUMULATIVE LIABILITY OF THE AUTHOR TO THE USER FOR ALL CLAIMS
+ARISING UNDER OR RELATING TO THIS LICENSE OR THE SCRIPTS SHALL NOT EXCEED
+ZERO UNITED STATES DOLLARS (USD $0.00).
+
+--------------------------------------------------------------------------------
+7. TERMINATION
+--------------------------------------------------------------------------------
+
+This License terminates automatically and without notice if the User
+breaches any term of it. Upon termination, the User must cease all use of
+the Scripts, destroy every copy in their possession or control, and
+remove every public redistribution they have made. Sections 0, 4, 5, 6,
+8, 9, and 10 survive termination.
+
+The Author reserves the right to revoke this License from any specific
+individual or organization at any time, for any reason, with or without
+notice.
+
+--------------------------------------------------------------------------------
+8. EDUCATIONAL PURPOSE STATEMENT
+--------------------------------------------------------------------------------
+
+The Scripts are published for educational and research purposes: to study
+LuaU programming, sandbox escape patterns, Roblox client architecture,
+and game-cheat mitigation techniques. The Author does not encourage,
+condone, or instruct the User to ruin the experience of other players.
+Any decision to execute the Scripts in a live multiplayer game is made
+solely by the User, at the User's own risk and ethical responsibility.
+
+--------------------------------------------------------------------------------
+9. INDEMNIFICATION
+--------------------------------------------------------------------------------
+
+The User agrees to indemnify, defend, and hold harmless the Author from
+and against any and all claims, damages, losses, liabilities, costs, and
+expenses (including reasonable attorneys' fees) arising out of or in any
+way connected with the User's use, misuse, or distribution of the
+Scripts, including any breach of this License by the User.
+
+--------------------------------------------------------------------------------
+10. GOVERNING LAW & SEVERABILITY
+--------------------------------------------------------------------------------
+
+This License shall be governed by and construed under the laws applicable
+in the Author's jurisdiction of residence, without regard to conflict-of-
+law principles. If any provision of this License is held to be invalid,
+illegal, or unenforceable, the remaining provisions shall remain in full
+force and effect, and the invalid provision shall be reformed only to the
+minimum extent necessary to make it enforceable.
+
+This License represents the entire agreement between the User and the
+Author with respect to the Scripts and supersedes any prior agreement,
+understanding, or arrangement, whether written or oral.
+
+================================================================================
+                           END OF rESL VERSION 1.0
+================================================================================
